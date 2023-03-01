@@ -3271,6 +3271,8 @@ bool Settings::CompilerSets::isTarget64Bit(const QString &target)
         "mips64el", "mipsn32el", "mipsisa64r6el", "mips64r6el", "mipsn32r6el",
         // riscv64
         "riscv64",
+        // loongarch64
+        "loongarch64",
         // systemz
         "s390x", "systemz",
         // sparcv9
