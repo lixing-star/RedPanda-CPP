@@ -1,3 +1,37 @@
+Red Panda C++ Version 2.17
+
+  - enhancement: Add X86_64 AVX/AVX instruction descriptions to asm syntaxer.
+  - enhancement: Update x86 Assembly manual link to the newest website.
+  - enhancement: Add "New Text File" in the File menu
+  - enhancement: Add "address" in the memory view's mouse tip.
+  - enhancement: Show mousetip for numbers in the GNU assembly file. 
+  - enhancement: Open offline gnu as/x86 assembly manual if exists.
+  - fix: Hex number with 'f' in not is not correctly colored.
+
+Red Panda C++ Version 2.16
+
+  - fix: Project files that not in the project folder is not correctly handled in makefile.
+  - fix: Can't debug project when project is saved after it's compiled.
+  - fix: Icons for buttons in the cpu info dialog is not correctly set.
+  - fix: Can't locate the corresponding line in the generated asm file under linux.
+  - enhancement: Add cfi directives for asm syntaxer in linux.
+  - change: Editor option "Scroll past end of line" default to false.
+  - emhancement: Improve display of disassembled codes in the cpu info dialog.
+  - fix: Can't correctly parse function pointer var definition.
+  - enhancement: Improve support for function pointer typedefs.
+  - enhancement: Improve support for function pointer vars.
+  - enhancement: When first display two editor panes, auto make them the same width
+  - change: Don't rebuild the whole project when run/debug, if only contents of project unit file is modified.
+  - fix: rebuild may not work, if project's parallel build option is enabled.
+  - enhancement: Add "Close window" and "Move to other view" in the "Window" menu
+  - enhancement: Auto open CPU info dialog, if the program in debug is stopped at a position that have no source file.
+  - enhancement: "add watchpoint" when debug. It's hitted when the watch variable is modified, or it's out of scope.
+  - enhancement: Switch current call stack frame in the CPU info dialog
+  - fix: Shouldn't try evaluate value of the selection in the cpu info dialog.
+  - enhancement: Show oct/bin/bin value in the memory view's tooltip.
+  - fix: Hex float point literal is not correctly colored.
+  - fix: Problem's memory limit unit can't be correctly saved.
+
 Red Panda C++ Version 2.15
 
   - fix: Static class members is not correctly recognized as static.
@@ -25,6 +59,7 @@ Red Panda C++ Version 2.15
   - change: Merge search and replace to one dialog.
   - fix: Search dialog's "Match whole word" option doesn't work with "Use Regular expresion".
   - fix：Search dialog's "Close after search" option doesn't work.
+  - change: Fill the search dialog with the current selection if it's available.
 
 Red Panda C++ Version 2.14
 

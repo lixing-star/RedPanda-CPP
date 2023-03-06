@@ -25,8 +25,12 @@
 #include <memory>
 #include <QThread>
 #include <QProcessEnvironment>
+#define SI_NO_CONVERSION
 #include "SimpleIni.h"
 #include "qt_utils/utils.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 using SimpleIni = CSimpleIniA;
 using PSimpleIni = std::shared_ptr<SimpleIni>;

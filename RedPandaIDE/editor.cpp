@@ -1882,6 +1882,15 @@ void Editor::onTooltipTimer()
             pError = issues->front();
         }
     }
+    if (reason == TipType::Number) {
+        if (!syntaxer() ||
+            (syntaxer()->language() != QSynedit::ProgrammingLanguage::Assembly
+             && syntaxer()->language() != QSynedit::ProgrammingLanguage::ATTAssembly
+             )
+            ) {
+            reason=TipType::None;
+        }
+    }
 
     // Get subject
     bool isIncludeLine = false;
@@ -1903,8 +1912,7 @@ void Editor::onTooltipTimer()
         break;
     case TipType::Identifier:
         if (pMainWindow->debugger()->executing() && !pMainWindow->debugger()->inferiorRunning()) {
-            if (mParentPageControl)
-                s = getWordAtPosition(this,p, pBeginPos,pEndPos, WordPurpose::wpEvaluation); // debugging
+            s = getWordAtPosition(this,p, pBeginPos,pEndPos, WordPurpose::wpEvaluation); // debugging
         } else if (!mCompletionPopup->isVisible()
                  && !mHeaderCompletionPopup->isVisible()) {
             expression = getExpressionAtPosition(p);
@@ -1927,6 +1935,19 @@ void Editor::onTooltipTimer()
         break;
     case TipType::Error:
         s = pError->token;
+        break;
+    case TipType::Number:
+        if (!mCompletionPopup->isVisible()
+             && !mHeaderCompletionPopup->isVisible()) {
+            QSynedit::PTokenAttribute attr;
+            int start;
+            if (getTokenAttriAtRowColEx(p,s,start,attr)) {
+                QString line=document()->getLine(p.line-1);
+                int idx=start-2;
+                if (idx>=0 && idx<line.length() && line[idx]=='-')
+                    s='-'+s;
+            }
+        }
         break;
     case TipType::None:
         cancelHint();
@@ -1956,7 +1977,6 @@ void Editor::onTooltipTimer()
     mCurrentWord = s;
     mCurrentTipType = reason;
 
-
     // Determine what to do with subject
     QString hint = "";
     switch (reason) {
@@ -1977,9 +1997,37 @@ void Editor::onTooltipTimer()
                 && !mHeaderCompletionPopup->isVisible()) {
             if (pMainWindow->debugger()->executing()
                     && (pSettings->editor().enableDebugTooltips())) {
-                showDebugHint(s,p.line);
+                if (mParentPageControl) {
+                    showDebugHint(s,p.line);
+                }
             } else if (pSettings->editor().enableIdentifierToolTips()) {
                 hint = getParserHint(expression, s, p.line);
+            }
+        }
+        break;
+    case TipType::Number:
+        if (syntaxer() &&
+                (syntaxer()->language() == QSynedit::ProgrammingLanguage::Assembly
+                 || syntaxer()->language() == QSynedit::ProgrammingLanguage::ATTAssembly)
+                ) {
+            bool neg=false;
+            qlonglong val;
+            bool ok;
+            if (s.startsWith("-")) {
+                s=s.mid(1);
+                neg=true;
+            }
+            if (s.startsWith("0x")) {
+                val=s.toLongLong(&ok,16);
+            } else {
+                val=s.toLongLong(&ok,10);
+            }
+            if (ok) {
+                if (neg)
+                    val = -val;
+                hint=tr("hex: %1").arg((qulonglong)val,0,16)
+                        +"<br />"
+                     +tr("dec: %1").arg(val,0,10);
             }
         }
         break;
@@ -3851,8 +3899,10 @@ Editor::TipType Editor::getTipType(QPoint point, QSynedit::BufferCoord& pos)
                         return TipType::Selection;
                 } else if (mParser && mParser->isIncludeLine(document()->getLine(pos.line-1))) {
                     return TipType::Preprocessor;
-                }else if (attr->tokenType() == QSynedit::TokenType::Identifier) {
+                } else if (attr->tokenType() == QSynedit::TokenType::Identifier) {
                     return TipType::Identifier;
+                } else if (attr->tokenType() == QSynedit::TokenType::Number) {
+                    return TipType::Number;
                 } else if (attr->tokenType() == QSynedit::TokenType::Keyword) {
                     return TipType::Keyword;
                 }

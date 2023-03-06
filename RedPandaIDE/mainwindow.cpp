@@ -217,6 +217,7 @@ MainWindow::MainWindow(QWidget *parent)
     mMenuNew->setTitle(tr("New"));
     mMenuNew->addAction(ui->actionNew);
     mMenuNew->addAction(ui->actionNew_GAS_File);
+    mMenuNew->addAction(ui->actionNew_Text_File);
     mMenuNew->addAction(ui->actionNew_Project);
     mMenuNew->addSeparator();
     mMenuNew->addAction(ui->actionNew_Template);
@@ -418,7 +419,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->actionIA_32_Assembly_Language_Reference_Manual->setVisible(true);
         ui->actionx86_Assembly_Language_Reference_Manual->setVisible(false);
 #elif defined(ARCH_X86_64)
-        ui->actionIA_32_Assembly_Language_Reference_Manual->setVisible(true);
+        ui->actionIA_32_Assembly_Language_Reference_Manual->setVisible(false);
         ui->actionx86_Assembly_Language_Reference_Manual->setVisible(true);
 #else
         ui->actionIA_32_Assembly_Language_Reference_Manual->setVisible(false);
@@ -592,6 +593,8 @@ void MainWindow::updateEditorActions(const Editor *e)
         ui->actionGoto_Declaration->setEnabled(false);
         ui->actionGoto_Definition->setEnabled(false);
         ui->actionFind_references->setEnabled(false);
+
+        ui->actionMove_To_Other_View->setEnabled(false);
     } else {
         ui->actionAuto_Detect->setEnabled(true);
         ui->actionEncode_in_ANSI->setEnabled(true);
@@ -653,6 +656,7 @@ void MainWindow::updateEditorActions(const Editor *e)
         ui->actionGoto_Declaration->setEnabled(e->parser()!=nullptr);
         ui->actionGoto_Definition->setEnabled(e->parser()!=nullptr);
         ui->actionFind_references->setEnabled(e->parser()!=nullptr);
+        ui->actionMove_To_Other_View->setEnabled(editorList()->pageCount()>1);
     }
 
     updateCompileActions(e);
@@ -1016,16 +1020,17 @@ void MainWindow::removeActiveBreakpoints()
 void MainWindow::setActiveBreakpoint(QString fileName, int Line, bool setFocus)
 {
     removeActiveBreakpoints();
-    if (!fileExists(fileName))
-        return;
     // Then active the current line in the current file
     Editor *e = openFile(fileName);
     if (e!=nullptr) {
         e->setActiveBreakpointFocus(Line,setFocus);
+        if (setFocus) {
+            activateWindow();
+        }
+    } else {
+        pMainWindow->showCPUInfoDialog();
     }
-    if (setFocus) {
-        activateWindow();
-    }
+    return;
 }
 
 void MainWindow::updateDPI(int oldDPI, int /*newDPI*/)
@@ -2052,6 +2057,18 @@ void MainWindow::runExecutable(RunType runType)
         QFileInfo execInfo(mProject->executable());
         QDateTime execModTime = execInfo.lastModified();
         if (execInfo.exists() && mProject->modifiedSince(execModTime)) {
+            //if project options changed, or units added/removed
+            //mProject->saveAll();
+            mCompileSuccessionTask=std::make_shared<CompileSuccessionTask>();
+            mCompileSuccessionTask->type = CompileSuccessionTaskType::RunNormal;
+            mCompileSuccessionTask->execName=mProject->executable();
+            mCompileSuccessionTask->isExecutable=true;
+            mCompileSuccessionTask->binDirs=binDirs;
+            compile(true);
+            return;
+        }
+        if (execInfo.exists() && mProject->unitsModifiedSince(execModTime)) {
+            //if units modified;
             //mProject->saveAll();
             mCompileSuccessionTask=std::make_shared<CompileSuccessionTask>();
             mCompileSuccessionTask->type = CompileSuccessionTaskType::RunNormal;
@@ -2167,6 +2184,18 @@ void MainWindow::debug()
             QFileInfo execInfo(mProject->executable());
             QDateTime execModTime = execInfo.lastModified();
             if (execInfo.exists() && mProject->modifiedSince(execModTime)) {
+                //if project options changed, or units added/removed
+                //mProject->saveAll();
+                mCompileSuccessionTask=std::make_shared<CompileSuccessionTask>();
+                mCompileSuccessionTask->type = CompileSuccessionTaskType::Debug;
+                mCompileSuccessionTask->execName=mProject->executable();
+                mCompileSuccessionTask->isExecutable=true;
+                mCompileSuccessionTask->binDirs=binDirs;
+                compile(true);
+                return;
+            }
+            if (execInfo.exists() && mProject->unitsModifiedSince(execModTime)) {
+                //if units modified
                 //mProject->saveAll();
                 mCompileSuccessionTask=std::make_shared<CompileSuccessionTask>();
                 mCompileSuccessionTask->type = CompileSuccessionTaskType::Debug;
@@ -4508,7 +4537,7 @@ void MainWindow::onFilesViewOpenInTerminal()
 #ifdef Q_OS_WIN
         openShell(fileInfo.path(),"cmd.exe",getDefaultCompilerSetBinDirs());
 #else
-        openShell(fileInfo.path(),pSettings->environment().terminalPath(),getDefaultCompilerSetBinDirs());
+        openShell(fileInfo.path(),pSettings->environment().terminalPathForExec(),getDefaultCompilerSetBinDirs());
 #endif
     }
 }
@@ -4865,6 +4894,7 @@ void MainWindow::onEditorContextMenu(const QPoint& pos)
         menu.addSeparator();
         if (canDebug) {
             menu.addAction(ui->actionAdd_Watch);
+            menu.addAction(ui->actionAdd_Watchpoint);
             menu.addAction(ui->actionToggle_Breakpoint);
             menu.addAction(ui->actionClear_all_breakpoints);
             menu.addSeparator();
@@ -4940,10 +4970,6 @@ void MainWindow::onEditorTabContextMenu(QTabWidget* tabWidget, const QPoint &pos
     menu.addAction(ui->actionMove_To_Other_View);
     menu.addSeparator();
     menu.addAction(ui->actionFile_Properties);
-    ui->actionMove_To_Other_View->setEnabled(
-                tabWidget==ui->EditorTabsRight
-                || tabWidget->count()>1
-                );
     if (editor ) {
         ui->actionLocate_in_Files_View->setEnabled(!editor->isNew());
     }
@@ -4958,6 +4984,7 @@ void MainWindow::disableDebugActions()
     ui->actionStep_Out->setEnabled(false);
     ui->actionRun_To_Cursor->setEnabled(false);
     ui->actionContinue->setEnabled(false);
+    ui->actionAdd_Watchpoint->setEnabled(false);
     ui->cbEvaluate->setEnabled(false);
     ui->cbMemoryAddress->setEnabled(false);
     if (mCPUDialog) {
@@ -4974,6 +5001,7 @@ void MainWindow::enableDebugActions()
     ui->actionStep_Out->setEnabled(!mDebugger->inferiorRunning());
     ui->actionRun_To_Cursor->setEnabled(!mDebugger->inferiorRunning());
     ui->actionContinue->setEnabled(!mDebugger->inferiorRunning());
+    ui->actionAdd_Watchpoint->setEnabled(!mDebugger->inferiorRunning());
     ui->cbEvaluate->setEnabled(!mDebugger->inferiorRunning());
     ui->cbMemoryAddress->setEnabled(!mDebugger->inferiorRunning());
     if (mCPUDialog) {
@@ -5009,6 +5037,17 @@ void MainWindow::onTodoFound(const QString& filename, int lineNo, int ch, const 
 
 void MainWindow::onTodoParseFinished()
 {
+}
+
+void MainWindow::onWatchpointHitted(const QString &var, const QString &oldVal, const QString &newVal)
+{
+    QMessageBox::information(this,
+                             tr("Watchpoint hitted"),
+                             tr("Value of \"%1\" has changed:").arg(var)
+                             +"<br />"
+                             +tr("Old value: %1").arg(oldVal)
+                             +"<br />"
+                             +tr("New value: %1").arg(newVal));
 }
 
 void MainWindow::prepareProjectForCompile()
@@ -5673,9 +5712,9 @@ void MainWindow::onCompileFinished(QString filename, bool isCheckSyntax)
                     if (e && editor) {
                         int line = e->caretY();
                         int startLine = 1;
-                        QString s = " # "+e->filename()+":";
+                        QString s = "# "+e->filename()+":";
                         for(int i=0;i<editor->document()->count();i++) {
-                            QString t=editor->document()->getLine(i);
+                            QString t=editor->document()->getLine(i).trimmed();
                             if (t.startsWith(s,PATH_SENSITIVITY)) {
                                 t=t.mid(s.length());
                                 int pos = t.indexOf(":");
@@ -6640,7 +6679,7 @@ void MainWindow::on_actionOpen_Terminal_triggered()
 #ifdef Q_OS_WIN
             openShell(info.path(),"cmd.exe",getBinDirsForCurrentEditor());
 #else
-            openShell(info.path(),pSettings->environment().terminalPath(),getBinDirsForCurrentEditor());
+            openShell(info.path(),pSettings->environment().terminalPathForExec(),getBinDirsForCurrentEditor());
 #endif
         }
     }
@@ -6675,19 +6714,7 @@ void MainWindow::on_searchView_doubleClicked(const QModelIndex &index)
 
 void MainWindow::on_tblStackTrace_doubleClicked(const QModelIndex &index)
 {
-    PTrace trace = mDebugger->backtraceModel()->backtrace(index.row());
-    if (trace) {
-        Editor *e = openFile(trace->filename);
-        if (e) {
-            e->setCaretPositionAndActivate(trace->line,1);
-        }
-        mDebugger->sendCommand("-stack-select-frame", QString("%1").arg(trace->level));
-        mDebugger->sendCommand("-stack-list-variables", "--all-values");
-        mDebugger->sendCommand("-var-update", "--all-values *");
-        if (this->mCPUDialog) {
-            this->mCPUDialog->updateInfo();
-        }
-    }
+    switchCurrentStackTrace(index.row());
 }
 
 
@@ -6983,7 +7010,7 @@ void MainWindow::on_actionProject_Open_In_Terminal_triggered()
 #ifdef Q_OS_WIN
     openShell(mProject->directory(),"cmd.exe",mProject->binDirs());
 #else
-    openShell(mProject->directory(),pSettings->environment().terminalPath(),mProject->binDirs());
+    openShell(mProject->directory(),pSettings->environment().terminalPathForExec(),mProject->binDirs());
 #endif
 }
 
@@ -7614,8 +7641,12 @@ void MainWindow::updateVCSActions()
         canBranch =!mFileSystemModelIconProvider.VCSRepository()->hasChangedFiles()
                 && !mFileSystemModelIconProvider.VCSRepository()->hasStagedFiles();
     }
+
     ui->actionGit_Remotes->setEnabled(hasRepository && shouldEnable);
     ui->actionGit_Create_Repository->setEnabled(!hasRepository && shouldEnable);
+    ui->actionGit_Push->setEnabled(hasRepository && shouldEnable);
+    ui->actionGit_Pull->setEnabled(hasRepository && shouldEnable);
+    ui->actionGit_Fetch->setEnabled(hasRepository && shouldEnable);
     ui->actionGit_Log->setEnabled(hasRepository && shouldEnable);
     ui->actionGit_Commit->setEnabled(hasRepository && shouldEnable);
     ui->actionGit_Branch->setEnabled(hasRepository && shouldEnable && canBranch);
@@ -8443,6 +8474,27 @@ QList<QAction *> MainWindow::listShortCutableActions()
 {
     QList<QAction*> actions = findChildren<QAction *>(QString(), Qt::FindDirectChildrenOnly);
     return actions;
+}
+
+void MainWindow::switchCurrentStackTrace(int idx)
+{
+    PTrace trace = mDebugger->backtraceModel()->backtrace(idx);
+    if (trace) {
+        Editor *e = openFile(trace->filename);
+        if (e) {
+            e->setCaretPositionAndActivate(trace->line,1);
+        }
+        mDebugger->sendCommand("-stack-select-frame", QString("%1").arg(trace->level));
+        mDebugger->sendCommand("-stack-list-variables", "--all-values");
+        mDebugger->sendCommand("-var-update", "--all-values *");
+        if (this->mCPUDialog) {
+            this->mCPUDialog->updateInfo();
+        }
+        if (idx!=ui->tblStackTrace->currentIndex().row()) {
+            ui->tblStackTrace->setCurrentIndex(ui->tblStackTrace->model()->index(idx,0));
+        }
+    }
+
 }
 
 
@@ -9558,17 +9610,68 @@ void MainWindow::on_actionNew_GAS_File_triggered()
 
 void MainWindow::on_actionGNU_Assembler_Manual_triggered()
 {
+    QFileInfo fileInfo{includeTrailingPathDelimiter(pSettings->dirs().appDir())+
+                       QString{"Using GNU Assembler.pdf"}};
+    if (fileInfo.exists()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
+        return;
+    }
     QDesktopServices::openUrl(QUrl("https://sourceware.org/binutils/docs/as/index.html"));
 }
 
+#ifdef ARCH_X86_64
 void MainWindow::on_actionx86_Assembly_Language_Reference_Manual_triggered()
 {
-    QDesktopServices::openUrl(QUrl("https://docs.oracle.com/cd/E19120-01/open.solaris/817-5477/index.html"));
+    QFileInfo fileInfo{includeTrailingPathDelimiter(pSettings->dirs().appDir())+
+                       QString{"x86 Assembly Language Reference Manual.pdf"}};
+    if (fileInfo.exists()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl("https://docs.oracle.com/cd/E53394_01/html/E54851/index.html"));
+}
+#endif
+
+#ifdef ARCH_X86
+void MainWindow::on_actionIA_32_Assembly_Language_Reference_Manual_triggered()
+{
+    QFileInfo fileInfo{includeTrailingPathDelimiter(pSettings->dirs().appDir())+
+                       QString{"IA-32 Assembly Language Reference Manual.pdf"}};
+    if (fileInfo.exists()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl("https://docs.oracle.com/cd/E19455-01/806-3773/index.html"));
+}
+#endif
+
+void MainWindow::on_actionAdd_Watchpoint_triggered()
+{
+    QString s = "";
+    bool isOk;
+    s=QInputDialog::getText(this,
+                              tr("Watchpoint variable name"),
+                              tr("Stop execution when the following variable is modified (it must be visible from the currect scope):"),
+                            QLineEdit::Normal,
+                            s,&isOk);
+    if (!isOk)
+        return;
+    s = s.trimmed();
+    mDebugger->addWatchpoint(s);
 }
 
 
-void MainWindow::on_actionIA_32_Assembly_Language_Reference_Manual_triggered()
+void MainWindow::on_actionNew_Text_File_triggered()
 {
-    QDesktopServices::openUrl(QUrl("https://docs.oracle.com/cd/E19455-01/806-3773/index.html"));
+    if (mProject) {
+        if (QMessageBox::question(this,
+                                  tr("New Project File?"),
+                                  tr("Do you want to add the new file to the project?"),
+                                  QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+            newProjectUnitFile("txt");
+            return;
+        }
+    }
+    newEditor("txt");
 }
 
